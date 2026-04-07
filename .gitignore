@@ -1,7 +1,9 @@
 # Node modules
 node_modules/
 */node_modules/
+# BITS Goa: Inventory & Resource Scheduler (IRS) 🎓
 
+A full-stack, Role-Based Access Control (RBAC) application
 # Environment variables
 .env
 .env.local

@@ -15,7 +15,8 @@ export default function Dashboard() {
     const [activeTab, setActiveTab] = useState('inventory'); // 'inventory', 'queue', or 'my-bookings'
     const [queue, setQueue] = useState([]);
     const [myBookings, setMyBookings] = useState([]); // NEW: State for student's own bookings
-    
+    const [resourceSchedule, setResourceSchedule] = useState([]);
+
     const navigate = useNavigate();
 
     // === AUTH & ROLE MANAGEMENT ===
@@ -80,6 +81,22 @@ export default function Dashboard() {
             fetchQueue(); // Approvers fetch the action queue
         }
     }, [userRole]);
+
+    useEffect(() => {
+        if (selectedResource) {
+            const fetchSchedule = async () => {
+                try {
+                    const { data } = await axiosClient.get(`/bookings/resource/${selectedResource.resource_id}`);
+                    setResourceSchedule(data);
+                } catch (err) {
+                    console.error('Failed to fetch schedule', err);
+                }
+            };
+            fetchSchedule();
+        } else {
+            setResourceSchedule([]); // Clear the schedule when the modal closes
+        }
+    }, [selectedResource]);
 
     // === ACTIONS ===
     const handleLogout = () => {
@@ -312,6 +329,39 @@ export default function Dashboard() {
                         </div>
                         {error && <div className="mb-4 p-3 bg-red-900/20 text-red-400 text-sm rounded border border-red-900/50">{error}</div>}
                         {successMsg && <div className="mb-4 p-3 bg-green-900/20 text-green-400 text-sm rounded border border-green-900/50">{successMsg}</div>}
+                        
+                        {/* --- NEW: Upcoming Reservations List --- */}
+                        <div className="mb-6">
+                            <h4 className={`text-sm font-semibold mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                Blocked Times:
+                            </h4>
+                            {resourceSchedule.length === 0 ? (
+                                <p className="text-xs text-green-500 bg-green-900/20 p-2 rounded border border-green-900/50">
+                                    No upcoming reservations. Fully available!
+                                </p>
+                            ) : (
+                                <ul className={`text-xs space-y-1.5 max-h-32 overflow-y-auto pr-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                                    {resourceSchedule.map((slot, idx) => {
+                                        // Format dates cleanly (e.g., "Apr 2, 02:00 PM - 06:00 PM")
+                                        const start = new Date(slot.start_time);
+                                        const end = new Date(slot.end_time);
+                                        const dateStr = start.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                                        const timeStr = `${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                                        
+                                        return (
+                                            <li key={idx} className={`flex justify-between p-2 rounded ${isDarkMode ? 'bg-[#1A202C]' : 'bg-gray-100'}`}>
+                                                <span>{dateStr}, {timeStr}</span>
+                                                <span className="opacity-75 uppercase text-[10px] tracking-wider">
+                                                    {slot.approval_status.replace(/_/g, ' ')}
+                                                </span>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            )}
+                        </div>
+                        {/* --- END NEW --- */}
+
                         <form onSubmit={submitBooking} className="space-y-4">
                             <div>
                                 <label className={`block text-sm mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Start Time</label>

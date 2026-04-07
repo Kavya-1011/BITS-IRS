@@ -115,4 +115,25 @@ router.get('/me', verifyToken, async (req, res) => {
     }
 });
 
+// Fetch upcoming schedule for a specific resource to show availability
+router.get('/resource/:resourceId', verifyToken, async (req, res) => {
+    const { resourceId } = req.params;
+    try {
+        // We only care about bookings in the future that haven't been rejected
+        const query = `
+            SELECT start_time, end_time, approval_status 
+            FROM bookings 
+            WHERE resource_id = $1 
+              AND approval_status != 'rejected'
+              AND end_time >= NOW()
+            ORDER BY start_time ASC
+        `;
+        const result = await db.query(query, [resourceId]);
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to fetch resource schedule.' });
+    }
+});
+
 module.exports = router;
