@@ -137,6 +137,7 @@ router.get('/resource/:resourceId', verifyToken, async (req, res) => {
 });
 
 // Fetch the unified Ledger for Secretaries and Faculty
+// Fetch the unified Ledger for Secretaries and Faculty
 router.get('/ledger', verifyToken, async (req, res) => {
     const role = req.user.role;
 
@@ -146,7 +147,6 @@ router.get('/ledger', verifyToken, async (req, res) => {
     }
 
     try {
-        // We join users and resources to get the human-readable names
         let query = `
             SELECT b.booking_id, b.start_time, b.end_time, b.purpose, b.approval_status, 
                    r.resource_name, u.full_name AS requester_name 
@@ -155,13 +155,19 @@ router.get('/ledger', verifyToken, async (req, res) => {
             JOIN users u ON b.user_id = u.user_id
         `;
 
-        // If you eventually add a "club_id" to your users table, you would filter Role 2 here like this:
-        // if (role === 2) query += ` WHERE u.club_id = $1`; 
+        // We MUST define the array here so it exists before the if-statement!
+        const values = []; 
+
+        // Activate the Club Secretary Filter
+        if (role === 2) {
+            query += ` WHERE u.club_id = $1`;
+            values.push(req.user.club_id); 
+        }
         
         // Order by most recent bookings first
         query += ` ORDER BY b.start_time DESC`;
 
-        const result = await db.query(query);
+        const result = await db.query(query, values);
         res.json(result.rows);
     } catch (err) {
         console.error(err);

@@ -32,9 +32,10 @@ export default function Dashboard() {
     if (token) {
         try {
             const payload = JSON.parse(atob(token.split('.')[1]));
+            console.log("THE RAW TOKEN PAYLOAD:", payload);
             userRole = payload.role;
             userEmail = payload.email || 'User';
-            userName = payload.name || 'User';
+            userName = sessionStorage.getItem('userName') || 'User';
         } catch (e) {
             console.error("Invalid token format");
         }
@@ -117,6 +118,7 @@ export default function Dashboard() {
     // === ACTIONS ===
     const handleLogout = () => {
         sessionStorage.removeItem('token');
+        sessionStorage.removeItem('userName');
         navigate('/');
     };
 

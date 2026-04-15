@@ -11,7 +11,9 @@ export default function Login() {
         e.preventDefault();
         try {
             const { data } = await axiosClient.post('/auth/login', { email, password });
+            console.log("BACKEND DIRECT RESPONSE:", data);
             sessionStorage.setItem('token', data.token);
+            sessionStorage.setItem('userName', data.user.name);
             navigate('/dashboard');
         } catch (error) {
             alert('Login failed. Check credentials.');
