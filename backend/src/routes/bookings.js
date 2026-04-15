@@ -136,4 +136,37 @@ router.get('/resource/:resourceId', verifyToken, async (req, res) => {
     }
 });
 
+// Fetch the unified Ledger for Secretaries and Faculty
+router.get('/ledger', verifyToken, async (req, res) => {
+    const role = req.user.role;
+
+    // Students have their own '/me' route, they don't get access to the global ledger
+    if (role === 4) {
+        return res.status(403).json({ error: 'Access denied.' });
+    }
+
+    try {
+        // We join users and resources to get the human-readable names
+        let query = `
+            SELECT b.booking_id, b.start_time, b.end_time, b.purpose, b.approval_status, 
+                   r.resource_name, u.full_name AS requester_name 
+            FROM bookings b
+            JOIN resources r ON b.resource_id = r.resource_id
+            JOIN users u ON b.user_id = u.user_id
+        `;
+
+        // If you eventually add a "club_id" to your users table, you would filter Role 2 here like this:
+        // if (role === 2) query += ` WHERE u.club_id = $1`; 
+        
+        // Order by most recent bookings first
+        query += ` ORDER BY b.start_time DESC`;
+
+        const result = await db.query(query);
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to fetch ledger.' });
+    }
+});
+
 module.exports = router;
