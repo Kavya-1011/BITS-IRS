@@ -41,4 +41,23 @@ router.get('/dashboard', verifyToken, async (req, res) => {
     }
 });
 
+// Settle a late fee
+router.post('/settle-fine/:bookingId', verifyToken, async (req, res) => {
+    const { bookingId } = req.params;
+    const role = req.user.role;
+
+    // Security: Only Secretaries (2) or Faculty (3) can settle fines
+    if (role !== 2 && role !== 3) {
+        return res.status(403).json({ error: 'Unauthorized to settle fines.' });
+    }
+
+    try {
+        await db.query('SELECT settle_late_fee($1)', [bookingId]);
+        res.json({ message: 'Late fee settled successfully and budget updated.' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to settle fine. Check club balance.' });
+    }
+});
+
 module.exports = router;

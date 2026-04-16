@@ -218,6 +218,27 @@ export default function Dashboard() {
         }
     };
 
+    const handleSettleFine = async (bookingId) => {
+        if (!window.confirm("Confirm payment of late fee from club budget?")) return;
+        try {
+            await axiosClient.post(`/finance/settle-fine/${bookingId}`);
+            fetchFinanceDashboard(); // Refresh the pie chart and notices
+        } catch (err) {
+            alert(err.response?.data?.error || "Failed to settle fine");
+        }
+    };
+
+    const handleReturnResource = async (bookingId) => {
+        if (!window.confirm("Confirm you have received this resource back?")) return;
+        try {
+            await axiosClient.patch(`/bookings/${bookingId}/return`);
+            fetchLedger(); // Refresh the table
+            if (userRole === 2) fetchFinanceDashboard(); // Refresh the late fee checker!
+        } catch (err) {
+            alert(err.response?.data?.error || "Failed to mark as returned");
+        }
+    };
+
     // FINANCE MODULE ADDITION: Pie Data Formatting
     const pieData = financeData ? [
         { name: 'Balance', value: parseFloat(financeData.wallet.current_balance) },
@@ -327,15 +348,19 @@ export default function Dashboard() {
                                 {/* Wallet Chart */}
                                 <div className={`p-6 rounded-xl border ${isDarkMode ? 'bg-[#151923] border-gray-800' : 'bg-white border-gray-200'} shadow-sm flex flex-col items-center`}>
                                     <h3 className="text-sm font-semibold mb-4 w-full">Club Wallet Overview</h3>
-                                    <div className="w-full h-40">
-                                        <ResponsiveContainer>
-                                            <PieChart>
-                                                <Pie data={pieData} innerRadius={40} outerRadius={60} paddingAngle={5} dataKey="value">
-                                                    {pieData.map((_, i) => <Cell key={i} fill={COLORS[i]} stroke="none"/>)}
-                                                </Pie>
-                                                <Tooltip />
-                                            </PieChart>
-                                        </ResponsiveContainer>
+                                    <div className="w-full h-40 flex items-center justify-center">
+                                        {parseFloat(financeData.wallet.current_balance) === 0 && parseFloat(financeData.wallet.total_spent) === 0 ? (
+                                            <span className="text-gray-500 text-xs italic">No funds allocated yet.</span>
+                                        ) : (
+                                            <ResponsiveContainer>
+                                                <PieChart>
+                                                    <Pie data={pieData} innerRadius={40} outerRadius={60} paddingAngle={5} dataKey="value">
+                                                        {pieData.map((_, i) => <Cell key={i} fill={COLORS[i]} stroke="none"/>)}
+                                                    </Pie>
+                                                    <Tooltip />
+                                                </PieChart>
+                                            </ResponsiveContainer>
+                                        )}
                                     </div>
                                     <div className="flex justify-between w-full mt-4 text-xs font-medium">
                                         <span className="text-green-500">Balance: ₹{financeData.wallet.current_balance}</span>
@@ -347,19 +372,23 @@ export default function Dashboard() {
                                 <div className={`p-6 rounded-xl border ${isDarkMode ? 'bg-[#151923] border-gray-800' : 'bg-white border-gray-200'} shadow-sm overflow-hidden`}>
                                     <h3 className="text-sm font-semibold mb-4">Overdue Notices</h3>
                                     <div className="space-y-3 overflow-y-auto max-h-40 pr-2">
-                                        {financeData.overtime_reports.length === 0 ? (
-                                            <p className="text-xs text-gray-500 italic">No pending late fees.</p>
-                                        ) : (
-                                            financeData.overtime_reports.map(report => (
-                                                <div key={report.booking_id} className={`flex justify-between items-center p-3 rounded text-xs ${isDarkMode ? 'bg-[#1A202C]' : 'bg-gray-50'}`}>
-                                                    <div>
-                                                        <p className="font-bold">{report.resource_name}</p>
-                                                        <p className="opacity-50 text-[10px] uppercase">{report.hours_overdue} Hours Late</p>
-                                                    </div>
-                                                    <span className="text-red-500 font-bold">₹{report.calculated_late_fee}</span>
-                                                </div>
-                                            ))
-                                        )}
+                                    {financeData.overtime_reports.map(report => (
+                                        <div key={report.booking_id} className={`flex justify-between items-center p-3 rounded text-xs ${isDarkMode ? 'bg-[#1A202C]' : 'bg-gray-50'}`}>
+                                            <div>
+                                                <p className="font-bold">{report.resource_name}</p>
+                                                <p className="opacity-50 text-[10px] uppercase">{report.hours_overdue} Hours Late</p>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-red-500 font-bold">₹{report.calculated_late_fee}</span>
+                                                <button 
+                                                    onClick={() => handleSettleFine(report.booking_id)}
+                                                    className="bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded text-[10px] font-bold transition"
+                                                >
+                                                    SETTLE
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
                                     </div>
                                 </div>
                             </div>
@@ -381,7 +410,27 @@ export default function Dashboard() {
                                             <td className="px-6 py-4">{req.requester_name}</td>
                                             <td className="px-6 py-4 font-mono text-xs text-gray-500">{new Date(req.start_time).toLocaleString()} <br/>to {new Date(req.end_time).toLocaleString()}</td>
                                             <td className="px-6 py-4 text-gray-500 max-w-xs truncate">{req.purpose}</td>
-                                            <td className="px-6 py-4 text-right">{renderApprovalBadge(req.approval_status)}</td>
+                                            
+                                            {/* --- NEW BUTTON LOGIC ADDED HERE --- */}
+                                            <td className="px-6 py-4 text-right flex justify-end items-center gap-3">
+                                                {renderApprovalBadge(req.approval_status)}
+                                                
+                                                {/* If it's fully approved, and hasn't been returned yet, show the button */}
+                                                {req.approval_status === 'approved_by_faculty' && !req.actual_return_time && (
+                                                    <button 
+                                                        onClick={() => handleReturnResource(req.booking_id)}
+                                                        className="px-3 py-1 text-[10px] font-bold uppercase rounded bg-[#374151] hover:bg-gray-600 text-white transition"
+                                                        title="Mark as returned to inventory"
+                                                    >
+                                                        Check-In
+                                                    </button>
+                                                )}
+
+                                                {/* Optional: Show a subtle indicator if it HAS been returned */}
+                                                {req.actual_return_time && (
+                                                    <span className="text-[10px] font-bold text-gray-500 uppercase">Returned</span>
+                                                )}
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
