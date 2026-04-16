@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import axiosClient from '../api/axiosClient';
 import { useNavigate } from 'react-router-dom';
+// FINANCE MODULE ADDITION: Chart components
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 
 export default function Dashboard() {
-    // === 1. AUTH & ROLE MANAGEMENT ===
     const token = sessionStorage.getItem('token');
     let userRole = 4; 
     let userEmail = '';
@@ -30,7 +31,6 @@ export default function Dashboard() {
         }
     };
 
-    // === 2. STATE MANAGEMENT ===
     const [resources, setResources] = useState([]);
     const [selectedResource, setSelectedResource] = useState(null);
     const [bookingData, setBookingData] = useState({ start_time: '', end_time: '', purpose: '' });
@@ -45,23 +45,20 @@ export default function Dashboard() {
     const [resourceSchedule, setResourceSchedule] = useState([]);
     const [ledger, setLedger] = useState([]); 
 
-    // NEW: Club Selection States
+    // FINANCE MODULE ADDITION: State for finance data
+    const [financeData, setFinanceData] = useState(null);
+
     const [userClubs, setUserClubs] = useState([]);
     const [selectedClubId, setSelectedClubId] = useState('');
 
     const navigate = useNavigate();
 
-    // === 3. LIFECYCLE & DATA FETCHING ===
-    
-    // Safely load clubs from storage on boot
     useEffect(() => {
         try {
             const rawClubs = sessionStorage.getItem('userClubs');
             if (rawClubs && rawClubs !== 'undefined') {
                 const storedClubs = JSON.parse(rawClubs);
                 setUserClubs(storedClubs);
-                
-                // Auto-select if Secretary managing exactly 1 club
                 if (userRole === 2 && storedClubs.length === 1) {
                     setSelectedClubId(storedClubs[0].club_id);
                 }
@@ -75,27 +72,21 @@ export default function Dashboard() {
         try {
             const { data } = await axiosClient.get('/resources');
             setResources(data);
-        } catch (error) {
-            console.error('Failed to fetch resources', error);
-        }
+        } catch (error) { console.error('Failed to fetch resources', error); }
     };
 
     const fetchQueue = async () => {
         try {
             const { data } = await axiosClient.get('/bookings/queue');
             setQueue(data);
-        } catch (error) {
-            console.error('Failed to fetch queue', error);
-        }
+        } catch (error) { console.error('Failed to fetch queue', error); }
     };
 
     const fetchMyBookings = async () => {
         try {
             const { data } = await axiosClient.get('/bookings/me');
             setMyBookings(data);
-        } catch (error) {
-            console.error('Failed to fetch personal bookings', error);
-        }
+        } catch (error) { console.error('Failed to fetch personal bookings', error); }
     };
 
     const fetchLedger = async () => {
@@ -103,8 +94,17 @@ export default function Dashboard() {
         try {
             const { data } = await axiosClient.get('/bookings/ledger');
             setLedger(data);
+        } catch (error) { console.error('Failed to fetch ledger', error); }
+    };
+
+    // FINANCE MODULE ADDITION: Fetch function
+    const fetchFinanceDashboard = async () => {
+        if (userRole !== 2) return; // Only for Secretaries
+        try {
+            const { data } = await axiosClient.get('/finance/dashboard');
+            setFinanceData(data);
         } catch (error) {
-            console.error('Failed to fetch ledger', error);
+            console.error('Failed to fetch finance stats', error);
         }
     };
 
@@ -115,8 +115,16 @@ export default function Dashboard() {
         } else {
             fetchQueue(); 
             fetchLedger(); 
+            if (userRole === 2) fetchFinanceDashboard();
         }
     }, [userRole]);
+
+    // FINANCE MODULE ADDITION: Refetch finance when switching to ledger tab
+    useEffect(() => {
+        if (activeTab === 'ledger' && userRole === 2) {
+            fetchFinanceDashboard();
+        }
+    }, [activeTab]);
 
     useEffect(() => {
         if (selectedResource) {
@@ -124,19 +132,14 @@ export default function Dashboard() {
                 try {
                     const { data } = await axiosClient.get(`/bookings/resource/${selectedResource.resource_id}`);
                     setResourceSchedule(data);
-                } catch (err) {
-                    console.error('Failed to fetch schedule', err);
-                }
+                } catch (err) { console.error('Failed to fetch schedule', err); }
             };
             fetchSchedule();
-        } else {
-            setResourceSchedule([]); 
-        }
+        } else { setResourceSchedule([]); }
     }, [selectedResource]);
 
-    // === 4. ACTIONS ===
     const handleLogout = () => {
-        sessionStorage.clear(); // Nuke everything on logout to prevent stuck states
+        sessionStorage.clear();
         navigate('/');
     };
 
@@ -144,16 +147,14 @@ export default function Dashboard() {
         e.preventDefault();
         setError('');
         setSuccessMsg('');
-
         try {
             await axiosClient.post('/bookings', {
                 resource_id: selectedResource.resource_id,
                 start_time: bookingData.start_time,
                 end_time: bookingData.end_time,
                 purpose: bookingData.purpose,
-                club_id: selectedClubId === '' ? null : parseInt(selectedClubId) // Send the club!
+                club_id: selectedClubId === '' ? null : parseInt(selectedClubId)
             });
-            
             setSuccessMsg('Booking submitted successfully!');
             setTimeout(() => {
                 setSelectedResource(null);
@@ -173,15 +174,13 @@ export default function Dashboard() {
             fetchQueue();
             fetchLedger();
             fetchResources();
-        } catch (err) {
-            alert(err.response?.data?.error || "Failed to update status");
-        }
+            if (userRole === 2) fetchFinanceDashboard(); // Update stats if payment was processed
+        } catch (err) { alert(err.response?.data?.error || "Failed to update status"); }
     };
 
     const toggleMaintenance = async (resource) => {
         const isCurrentlyBroken = resource.status === 'maintenance';
         const newStatus = isCurrentlyBroken ? 'available' : 'maintenance';
-        
         let eta = null;
         if (newStatus === 'maintenance') {
             const days = prompt("How many days will this be in maintenance?");
@@ -190,19 +189,15 @@ export default function Dashboard() {
             date.setDate(date.getDate() + parseInt(days));
             eta = date.toISOString();
         }
-
         try {
             await axiosClient.patch(`/resources/${resource.resource_id}/maintenance`, {
                 status: newStatus,
                 eta: eta
             });
             fetchResources(); 
-        } catch (err) {
-            alert("Failed to update status");
-        }
+        } catch (err) { alert("Failed to update status"); }
     };
 
-    // === 5. UI HELPERS ===
     const getStatusColor = (status) => {
         switch(status?.toLowerCase()) {
             case 'available': return 'text-green-500';
@@ -223,7 +218,13 @@ export default function Dashboard() {
         }
     };
 
-    // === 6. RENDER ===
+    // FINANCE MODULE ADDITION: Pie Data Formatting
+    const pieData = financeData ? [
+        { name: 'Balance', value: parseFloat(financeData.wallet.current_balance) },
+        { name: 'Spent', value: parseFloat(financeData.wallet.total_spent) }
+    ] : [];
+    const COLORS = ['#10B981', '#EF4444']; // Green-500 and Red-500
+
     return (
         <div className={`min-h-screen ${isDarkMode ? 'bg-[#0B0F19] text-gray-100' : 'bg-gray-50 text-gray-800'} font-sans relative transition-colors duration-200`}>
             
@@ -263,8 +264,6 @@ export default function Dashboard() {
             </div>
 
             <main className="max-w-7xl mx-auto p-8 pt-6">
-                
-                {/* --- TAB 1: INVENTORY --- */}
                 {activeTab === 'inventory' && (
                     <>
                         <div className="mb-8"><input type="text" placeholder="🔍 Search resources..." className={`w-full max-w-md px-4 py-2.5 rounded-lg outline-none ${isDarkMode ? 'bg-[#1A202C] text-white placeholder-gray-500' : 'bg-white shadow-sm text-gray-800'}`} /></div>
@@ -272,7 +271,7 @@ export default function Dashboard() {
                             {resources.map((res) => (
                                 <div key={res.resource_id} className={`p-6 rounded-xl border ${isDarkMode ? 'bg-[#151923] border-gray-800' : 'bg-white border-gray-200'} shadow-sm flex flex-col justify-between relative`}>
                                     {userRole === 1 && (
-                                        <button onClick={() => toggleMaintenance(res)} className="absolute top-4 right-4 z-10 p-2 rounded-full bg-gray-500/10 hover:bg-gray-500/20 text-gray-400" title={res.status === 'maintenance' ? 'Mark Available' : 'Send to Maintenance'}>
+                                        <button onClick={() => toggleMaintenance(res)} className="absolute top-4 right-4 z-10 p-2 rounded-full bg-gray-500/10 hover:bg-gray-500/20 text-gray-400">
                                             {res.status === 'maintenance' ? '✅' : '🔧'}
                                         </button>
                                     )}
@@ -282,17 +281,8 @@ export default function Dashboard() {
                                     </div>
                                     <div className="space-y-3 mb-6 text-sm">
                                         <div className="flex justify-between items-center border-b pb-2 border-opacity-10 border-gray-500">
-                                            <span className="text-gray-500">ID:</span><span className="font-mono">#{res.resource_id}</span>
-                                        </div>
-                                        <div className="flex justify-between items-center border-b pb-2 border-opacity-10 border-gray-500">
                                             <span className="text-gray-500">Rate:</span><span>₹{res.hourly_rate}/hr</span>
                                         </div>
-                                        {res.status === 'maintenance' && res.maintenance_eta && (
-                                            <div className="flex justify-between items-center pt-1">
-                                                <span className="text-red-400/80 text-xs font-medium">Expected Return:</span>
-                                                <span className="text-red-400 text-xs font-bold">{new Date(res.maintenance_eta).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
-                                            </div>
-                                        )}
                                     </div>
                                     <button onClick={() => setSelectedResource(res)} disabled={res.status !== 'available'} className={`w-full py-2.5 rounded-lg font-medium transition ${res.status === 'available' ? 'bg-[#2563EB] text-white hover:bg-blue-600' : isDarkMode ? 'bg-[#1A202C] text-gray-600 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
                                         {res.status === 'available' ? 'Book Resource' : 'Unavailable'}
@@ -303,7 +293,6 @@ export default function Dashboard() {
                     </>
                 )}
 
-                {/* --- TAB 2: ACTION QUEUE --- */}
                 {activeTab === 'queue' && userRole !== 4 && (
                     <div className={`rounded-xl border overflow-hidden shadow-sm ${isDarkMode ? 'bg-[#151923] border-gray-800' : 'bg-white border-gray-200'}`}>
                         <table className="w-full text-left text-sm">
@@ -328,28 +317,76 @@ export default function Dashboard() {
                     </div>
                 )}
 
-                {/* --- TAB 3: LEDGER --- */}
+                {/* --- TAB 3: LEDGER (WITH FINANCE STATS) --- */}
                 {activeTab === 'ledger' && userRole !== 4 && (
-                    <div className={`rounded-xl border overflow-hidden shadow-sm ${isDarkMode ? 'bg-[#151923] border-gray-800' : 'bg-white border-gray-200'}`}>
-                        <div className={`p-4 border-b ${isDarkMode ? 'border-gray-800 bg-[#1A202C]' : 'border-gray-200 bg-gray-50'}`}>
-                            <h2 className="font-semibold text-sm">{userRole === 3 ? 'Campus-Wide Booking History' : 'Club Member Booking History'}</h2>
+                    <div className="space-y-6">
+                        
+                        {/* FINANCE MODULE ADDITION: Stats Row */}
+                        {userRole === 2 && financeData && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Wallet Chart */}
+                                <div className={`p-6 rounded-xl border ${isDarkMode ? 'bg-[#151923] border-gray-800' : 'bg-white border-gray-200'} shadow-sm flex flex-col items-center`}>
+                                    <h3 className="text-sm font-semibold mb-4 w-full">Club Wallet Overview</h3>
+                                    <div className="w-full h-40">
+                                        <ResponsiveContainer>
+                                            <PieChart>
+                                                <Pie data={pieData} innerRadius={40} outerRadius={60} paddingAngle={5} dataKey="value">
+                                                    {pieData.map((_, i) => <Cell key={i} fill={COLORS[i]} stroke="none"/>)}
+                                                </Pie>
+                                                <Tooltip />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                    <div className="flex justify-between w-full mt-4 text-xs font-medium">
+                                        <span className="text-green-500">Balance: ₹{financeData.wallet.current_balance}</span>
+                                        <span className="text-red-500">Spent: ₹{financeData.wallet.total_spent}</span>
+                                    </div>
+                                </div>
+
+                                {/* Late Fees Summary */}
+                                <div className={`p-6 rounded-xl border ${isDarkMode ? 'bg-[#151923] border-gray-800' : 'bg-white border-gray-200'} shadow-sm overflow-hidden`}>
+                                    <h3 className="text-sm font-semibold mb-4">Overdue Notices</h3>
+                                    <div className="space-y-3 overflow-y-auto max-h-40 pr-2">
+                                        {financeData.overtime_reports.length === 0 ? (
+                                            <p className="text-xs text-gray-500 italic">No pending late fees.</p>
+                                        ) : (
+                                            financeData.overtime_reports.map(report => (
+                                                <div key={report.booking_id} className={`flex justify-between items-center p-3 rounded text-xs ${isDarkMode ? 'bg-[#1A202C]' : 'bg-gray-50'}`}>
+                                                    <div>
+                                                        <p className="font-bold">{report.resource_name}</p>
+                                                        <p className="opacity-50 text-[10px] uppercase">{report.hours_overdue} Hours Late</p>
+                                                    </div>
+                                                    <span className="text-red-500 font-bold">₹{report.calculated_late_fee}</span>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* History Table */}
+                        <div className={`rounded-xl border overflow-hidden shadow-sm ${isDarkMode ? 'bg-[#151923] border-gray-800' : 'bg-white border-gray-200'}`}>
+                            <div className={`p-4 border-b ${isDarkMode ? 'border-gray-800 bg-[#1A202C]' : 'border-gray-200 bg-gray-50'}`}>
+                                <h2 className="font-semibold text-sm">{userRole === 3 ? 'Campus-Wide Booking History' : 'Club Member Booking History'}</h2>
+                            </div>
+                            <table className="w-full text-left text-sm">
+                                <thead className={`text-xs uppercase bg-opacity-50 ${isDarkMode ? 'bg-[#1A202C] text-gray-400' : 'bg-gray-50 text-gray-500'}`}>
+                                    <tr><th className="px-6 py-4">Resource</th><th className="px-6 py-4">Requester</th><th className="px-6 py-4">Time Slot</th><th className="px-6 py-4">Purpose</th><th className="px-6 py-4 text-right">Status</th></tr>
+                                </thead>
+                                <tbody className={`divide-y ${isDarkMode ? 'divide-gray-800' : 'divide-gray-100'}`}>
+                                    {ledger.map((req) => (
+                                        <tr key={req.booking_id} className={`transition ${isDarkMode ? 'hover:bg-[#1A202C]' : 'hover:bg-gray-50'}`}>
+                                            <td className="px-6 py-4 font-medium">{req.resource_name}</td>
+                                            <td className="px-6 py-4">{req.requester_name}</td>
+                                            <td className="px-6 py-4 font-mono text-xs text-gray-500">{new Date(req.start_time).toLocaleString()} <br/>to {new Date(req.end_time).toLocaleString()}</td>
+                                            <td className="px-6 py-4 text-gray-500 max-w-xs truncate">{req.purpose}</td>
+                                            <td className="px-6 py-4 text-right">{renderApprovalBadge(req.approval_status)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
-                        <table className="w-full text-left text-sm">
-                            <thead className={`text-xs uppercase bg-opacity-50 ${isDarkMode ? 'bg-[#1A202C] text-gray-400' : 'bg-gray-50 text-gray-500'}`}>
-                                <tr><th className="px-6 py-4">Resource</th><th className="px-6 py-4">Requester</th><th className="px-6 py-4">Time Slot</th><th className="px-6 py-4">Purpose</th><th className="px-6 py-4 text-right">Status</th></tr>
-                            </thead>
-                            <tbody className={`divide-y ${isDarkMode ? 'divide-gray-800' : 'divide-gray-100'}`}>
-                                {ledger.map((req) => (
-                                    <tr key={req.booking_id} className={`transition ${isDarkMode ? 'hover:bg-[#1A202C]' : 'hover:bg-gray-50'}`}>
-                                        <td className="px-6 py-4 font-medium">{req.resource_name}</td>
-                                        <td className="px-6 py-4">{req.requester_name}</td>
-                                        <td className="px-6 py-4 font-mono text-xs text-gray-500">{new Date(req.start_time).toLocaleString()} <br/>to {new Date(req.end_time).toLocaleString()}</td>
-                                        <td className="px-6 py-4 text-gray-500 max-w-xs truncate">{req.purpose}</td>
-                                        <td className="px-6 py-4 text-right">{renderApprovalBadge(req.approval_status)}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
                     </div>
                 )}
 
@@ -375,7 +412,6 @@ export default function Dashboard() {
                 )}
             </main>
 
-            {/* --- BOOKING MODAL --- */}
             {selectedResource && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
                     <div className={`w-full max-w-md p-8 rounded-xl shadow-2xl border ${isDarkMode ? 'bg-[#151923] border-gray-800 text-white' : 'bg-white border-gray-200 text-gray-800'}`}>
@@ -408,8 +444,6 @@ export default function Dashboard() {
                         {successMsg && <div className="mb-4 p-3 bg-green-900/20 text-green-400 text-sm rounded border border-green-900/50">{successMsg}</div>}
                         
                         <form onSubmit={submitBooking} className="space-y-4">
-                            
-                            {/* THE DROPDOWN */}
                             {userClubs.length > 0 && userRole !== 3 && (
                                 <div>
                                     <label className={`block text-sm mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Booking on behalf of:</label>
@@ -419,13 +453,12 @@ export default function Dashboard() {
                                         </div>
                                     ) : (
                                         <select value={selectedClubId} onChange={(e) => setSelectedClubId(e.target.value)} required={userRole === 2} className={`w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm outline-none ${isDarkMode ? 'bg-[#1A202C] border-gray-800 text-white' : 'bg-white border-gray-300'}`}>
-                                            {userRole === 4 && <option value="">Personal Booking (No Club Affiliation)</option>}
+                                            {userRole === 4 && <option value="">Personal Booking</option>}
                                             {userClubs.map(club => (<option key={club.club_id} value={club.club_id}>{club.club_name}</option>))}
                                         </select>
                                     )}
                                 </div>
                             )}
-
                             <div>
                                 <label className={`block text-sm mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Start Time</label>
                                 <input type="datetime-local" required className={`w-full p-2.5 border rounded-lg text-sm outline-none ${isDarkMode ? 'bg-[#1A202C] border-gray-800 text-white' : 'bg-white border-gray-300'}`} onChange={(e) => setBookingData({...bookingData, start_time: e.target.value})} />
