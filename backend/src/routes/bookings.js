@@ -54,10 +54,12 @@ router.get('/queue', verifyToken, async (req, res) => {
             query += ` WHERE b.approval_status = 'pending' AND b.club_id = ANY($1::int[]) ORDER BY b.request_time ASC`;
             values.push(req.user.club_ids);
         } 
-        // Role 3: Faculty sees requests that passed the secretary (campus-wide)
+        // Role 3: Faculty sees requests that passed the secretary OR are personal requests
         else if (role === 3) {
-            query += ` WHERE b.approval_status = 'approved_by_secretary' ORDER BY b.request_time ASC`;
-        } 
+            query += ` WHERE b.approval_status = 'approved_by_secretary' 
+                          OR (b.approval_status = 'pending' AND b.club_id IS NULL) 
+                       ORDER BY b.request_time ASC`;
+        }
         // Role 1: Admin sees everything not rejected
         else {
             query += ` WHERE b.approval_status != 'rejected' ORDER BY b.request_time ASC`;
