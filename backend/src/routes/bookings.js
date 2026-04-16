@@ -4,22 +4,24 @@ const verifyToken = require('../middleware/auth');
 const router = express.Router();
 
 router.post('/', verifyToken, async (req, res) => {
-    const { resource_id, start_time, end_time, purpose } = req.body;
-    const user_id = req.user.id; // Extracted from JWT
+    // 1. Extract club_id from the frontend request
+    const { resource_id, start_time, end_time, purpose, club_id } = req.body;
+    const user_id = req.user.id; 
 
     try {
+        // 2. Add club_id to the INSERT statement
         const query = `
-            INSERT INTO bookings (user_id, resource_id, start_time, end_time, purpose)
-            VALUES ($1, $2, $3, $4, $5) 
+            INSERT INTO bookings (user_id, resource_id, start_time, end_time, purpose, club_id)
+            VALUES ($1, $2, $3, $4, $5, $6) 
             RETURNING *;
         `;
-        const values = [user_id, resource_id, start_time, end_time, purpose];
+        // 3. Pass the club_id (or null if it's a personal booking)
+        const values = [user_id, resource_id, start_time, end_time, purpose, club_id || null];
         
         const result = await db.query(query, values);
         res.status(201).json(result.rows[0]);
         
     } catch (err) {
-        // Catch the specific exception raised by your PL/pgSQL trigger
         if (err.message.includes('Resource is already booked')) {
             return res.status(409).json({ error: 'Time slot conflict: Resource is already booked.' });
         }
@@ -30,15 +32,13 @@ router.post('/', verifyToken, async (req, res) => {
 
 // 1. Fetch the Action Queue for Approvers
 router.get('/queue', verifyToken, async (req, res) => {
-    const role = req.user.role; // Extracted directly from the JWT
+    const role = req.user.role; 
 
-    // Role 4 is Student (No access)
     if (role === 4) {
         return res.status(403).json({ error: 'Access denied. Students cannot view the approval queue.' });
     }
 
     try {
-        // We join with resources and users so the frontend can display names instead of just IDs
         let query = `
             SELECT b.booking_id, b.start_time, b.end_time, b.purpose, b.approval_status, 
                    r.resource_name, u.full_name AS requester_name 
@@ -47,19 +47,23 @@ router.get('/queue', verifyToken, async (req, res) => {
             JOIN users u ON b.user_id = u.user_id
         `;
 
-        // Role 2: Secretary only sees "pending" requests
+        const values = []; // We need a values array for the SQL parameters
+
+        // Role 2: Secretary only sees "pending" requests FOR THEIR CLUBS
         if (role === 2) {
-            query += ` WHERE b.approval_status = 'pending' ORDER BY b.request_time ASC`;
+            query += ` WHERE b.approval_status = 'pending' AND b.club_id = ANY($1::int[]) ORDER BY b.request_time ASC`;
+            values.push(req.user.club_ids);
         } 
-        // Role 3: Faculty only sees requests that passed the secretary
+        // Role 3: Faculty sees requests that passed the secretary (campus-wide)
         else if (role === 3) {
             query += ` WHERE b.approval_status = 'approved_by_secretary' ORDER BY b.request_time ASC`;
-        } else {
-            // Admin (Role 1) sees everything not rejected
+        } 
+        // Role 1: Admin sees everything not rejected
+        else {
             query += ` WHERE b.approval_status != 'rejected' ORDER BY b.request_time ASC`;
         }
 
-        const result = await db.query(query);
+        const result = await db.query(query, values); // Pass the values array here!
         res.json(result.rows);
     } catch (err) {
         console.error(err);
@@ -160,8 +164,9 @@ router.get('/ledger', verifyToken, async (req, res) => {
 
         // Activate the Club Secretary Filter
         if (role === 2) {
-            query += ` WHERE u.club_id = $1`;
-            values.push(req.user.club_id); 
+            // Check if the booking's club_id matches ANY of the IDs in the Secretary's token array
+            query += ` WHERE b.club_id = ANY($1::int[])`; 
+            values.push(req.user.club_ids); 
         }
         
         // Order by most recent bookings first

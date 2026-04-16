@@ -14,6 +14,7 @@ export default function Login() {
             console.log("BACKEND DIRECT RESPONSE:", data);
             sessionStorage.setItem('token', data.token);
             sessionStorage.setItem('userName', data.user.name);
+            sessionStorage.setItem('userClubs', JSON.stringify(data.user.clubs));
             navigate('/dashboard');
         } catch (error) {
             alert('Login failed. Check credentials.');
