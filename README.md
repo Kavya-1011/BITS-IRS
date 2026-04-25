@@ -4,6 +4,8 @@ The **BITS Goa Inventory & Resource Scheduler (IRS)** is a comprehensive, full-s
 
 At its core, IRS is engineered around a highly robust, **Third Normal Form (3NF) PostgreSQL relational database**, featuring advanced PL/pgSQL concurrency triggers, automated financial ledgers, and a React-based frontend dashboard.
 
+**Check out the [System Demo & Screenshots](./DEMO.md) to see the IRS in action!**
+
 ---
 
 ## 👥 The Team & Roles
